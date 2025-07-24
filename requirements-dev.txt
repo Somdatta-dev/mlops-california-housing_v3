@@ -1,0 +1,37 @@
+# Include main requirements
+-r requirements.txt
+
+# Development and Testing
+pytest==8.3.4
+pytest-asyncio==0.24.0
+pytest-cov==6.0.0
+pytest-xdist==3.6.0
+pytest-mock==3.14.0
+
+# Code Quality
+black==24.10.0
+flake8==7.1.1
+isort==5.13.2
+mypy==1.13.0
+pre-commit==4.0.1
+
+# Documentation
+sphinx==8.1.3
+sphinx-rtd-theme==3.0.2
+mkdocs==1.6.1
+mkdocs-material==9.5.44
+
+# Jupyter Development
+jupyter==1.1.1
+jupyterlab==4.3.3
+nbstripout==0.7.1
+
+# Performance Profiling
+py-spy==0.4.0
+memory-profiler==0.61.0
+line-profiler==4.1.3
+
+# Additional Tools
+httpx==0.28.1  # For API testing
+faker==33.1.0  # For generating test data
+factory-boy==3.3.1  # Test data factories 

@@ -1,0 +1,61 @@
+# Core ML and Data Science
+pandas
+numpy
+scikit-learn
+scipy
+
+# GPU-Accelerated Libraries
+torch
+xgboost
+lightgbm
+cuml-cu12
+cudf-cu12
+cupy-cuda12x
+
+# MLOps and Experiment Tracking
+mlflow
+dvc[gs]
+optuna
+
+# API Framework
+fastapi
+uvicorn[standard]
+pydantic
+pydantic-settings
+
+# Monitoring and Metrics
+prometheus-client
+nvidia-ml-py
+
+# Database
+sqlalchemy
+sqlite3
+alembic
+
+# Data Validation
+pyjanitor
+
+# Containerization and Deployment
+docker
+docker-compose
+
+# Development and Testing
+pytest
+pytest-asyncio
+pytest-cov
+black
+flake8
+mypy
+pre-commit
+
+# Environment Management
+python-dotenv
+python-multipart
+psutil
+
+# Utilities
+requests
+tqdm
+click
+rich
+loguru 
