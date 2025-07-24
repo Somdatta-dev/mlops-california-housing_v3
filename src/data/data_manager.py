@@ -1,424 +1,476 @@
 """
-Data management system with DVC integration and comprehensive validation.
+Enhanced data manager with comprehensive data processing pipeline integration.
 """
 
 import os
-import logging
 import pandas as pd
 import numpy as np
 from pathlib import Path
-from typing import Tuple, Optional, Dict, Any, List
-from sklearn.datasets import fetch_california_housing
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler, RobustScaler
-import dvc.api
-from dotenv import load_dotenv
+from typing import Dict, List, Tuple, Optional, Any, Union
+import logging
 import pickle
-import json
-from datetime import datetime
+import joblib
+from sklearn.datasets import fetch_california_housing
+from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import train_test_split
 
 from .models import CaliforniaHousingData, DataQualityReport
+from .data_pipeline import CaliforniaHousingPipeline, create_pipeline_config, load_processed_data, load_scaler
+from .data_utils import describe_dataset, create_data_summary_report, validate_data_consistency
+from ..utils.logging_config import get_logger, LoggerMixin
 
-# Load environment variables
-load_dotenv()
-
-# Setup logging
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
-class DataManager:
+class DataManager(LoggerMixin):
     """
-    Comprehensive data management with DVC integration, validation, and preprocessing.
+    Enhanced data manager with comprehensive pipeline integration.
+    
+    This class provides a high-level interface for all data operations,
+    integrating the advanced data processing pipeline with the existing
+    model training workflow.
     """
     
     def __init__(self, 
                  data_dir: str = "data",
-                 dvc_remote: Optional[str] = None,
-                 use_dvc: bool = True):
+                 use_pipeline: bool = True,
+                 pipeline_config: Optional[Dict] = None,
+                 use_dvc: bool = False):
         """
-        Initialize DataManager.
+        Initialize the enhanced data manager.
         
         Args:
-            data_dir: Base directory for data storage
-            dvc_remote: DVC remote storage configuration
-            use_dvc: Whether to use DVC for data versioning
+            data_dir: Base data directory
+            use_pipeline: Whether to use the advanced pipeline
+            pipeline_config: Custom pipeline configuration
+            use_dvc: Whether to enable DVC integration
         """
         self.data_dir = Path(data_dir)
-        self.raw_dir = self.data_dir / "raw"
-        self.processed_dir = self.data_dir / "processed"
-        self.interim_dir = self.data_dir / "interim"
+        self.use_pipeline = use_pipeline
+        self.use_dvc = use_dvc
+        
+        # Directory structure
+        self.raw_data_path = self.data_dir / "raw"
+        self.processed_data_path = self.data_dir / "processed"
+        self.interim_data_path = self.data_dir / "interim"
+        self.external_data_path = self.data_dir / "external"
         
         # Create directories
-        for dir_path in [self.raw_dir, self.processed_dir, self.interim_dir]:
-            dir_path.mkdir(parents=True, exist_ok=True)
+        for path in [self.raw_data_path, self.processed_data_path, 
+                    self.interim_data_path, self.external_data_path]:
+            path.mkdir(parents=True, exist_ok=True)
         
-        self.use_dvc = use_dvc
-        self.dvc_remote = dvc_remote or os.getenv("DVC_REMOTE", "gdrive")
+        # Pipeline setup
+        if use_pipeline:
+            default_config = {
+                'raw_data_path': str(self.raw_data_path / "california_housing.csv"),
+                'processed_data_path': str(self.processed_data_path),
+                'interim_data_path': str(self.interim_data_path),
+                'external_data_path': str(self.external_data_path)
+            }
+            
+            if pipeline_config:
+                default_config.update(pipeline_config)
+            
+            self.pipeline_config = create_pipeline_config(**default_config)
+            self.pipeline = CaliforniaHousingPipeline(self.pipeline_config)
+        else:
+            self.pipeline_config = None
+            self.pipeline = None
         
-        # Data paths
-        self.raw_data_path = self.raw_dir / "california_housing.csv"
-        self.processed_data_path = self.processed_dir / "california_housing_processed.csv"
-        self.train_data_path = self.processed_dir / "train.csv"
-        self.test_data_path = self.processed_dir / "test.csv"
-        self.scaler_path = self.processed_dir / "scaler.pkl"
-        self.data_profile_path = self.processed_dir / "data_profile.json"
+        # Legacy support
+        self.scaler = None
+        self.feature_names = None
+        self.data_profile = None
         
-        logger.info(f"DataManager initialized with data_dir: {self.data_dir}")
-
-    def download_california_housing_data(self) -> pd.DataFrame:
+        self.log_info(f"DataManager initialized - Pipeline: {use_pipeline}, DVC: {use_dvc}")
+    
+    def download_california_housing_data(self, force_download: bool = False) -> Path:
         """
         Download California Housing dataset from sklearn.
         
+        Args:
+            force_download: Whether to force re-download
+            
         Returns:
-            DataFrame containing the California Housing data
+            Path to the downloaded data file
         """
-        logger.info("Downloading California Housing dataset from sklearn")
+        data_file = self.raw_data_path / "california_housing.csv"
+        
+        if data_file.exists() and not force_download:
+            self.log_info(f"Data already exists at {data_file}")
+            return data_file
+        
+        self.log_info("Downloading California Housing dataset from sklearn...")
         
         try:
-            # Fetch data from sklearn
+            # Fetch the dataset
             housing = fetch_california_housing(as_frame=True)
-            
-            # Combine features and target
             df = housing.frame
             
-            # Rename columns to match our Pydantic model
-            column_mapping = {
-                'MedInc': 'MedInc',
-                'HouseAge': 'HouseAge', 
-                'AveRooms': 'AveRooms',
-                'AveBedrms': 'AveBedrms',
-                'Population': 'Population',
-                'AveOccup': 'AveOccup',
-                'Latitude': 'Latitude',
-                'Longitude': 'Longitude',
-                'MedHouseVal': 'target'
-            }
+            # Save to CSV
+            df.to_csv(data_file, index=False)
             
-            df = df.rename(columns=column_mapping)
-            
-            # Save raw data
-            df.to_csv(self.raw_data_path, index=False)
-            logger.info(f"Raw data saved to {self.raw_data_path}")
+            self.log_info(f"✅ Dataset downloaded successfully: {df.shape}")
+            self.log_info(f"   Saved to: {data_file}")
+            self.log_info(f"   Size: {data_file.stat().st_size / 1024:.1f} KB")
             
             # Initialize DVC tracking if enabled
             if self.use_dvc:
                 self._init_dvc_tracking()
             
-            return df
+            return data_file
             
         except Exception as e:
-            logger.error(f"Error downloading California Housing data: {e}")
+            self.log_error(f"Failed to download dataset: {e}")
             raise
-
+    
     def _init_dvc_tracking(self):
         """Initialize DVC tracking for the dataset."""
         try:
             import subprocess
             
-            # Initialize DVC if not already done
+            # Check if DVC is initialized
             if not (Path.cwd() / ".dvc").exists():
                 subprocess.run(["dvc", "init"], check=True)
-                logger.info("DVC initialized")
+                self.log_info("DVC initialized")
             
-            # Add data to DVC tracking
-            if self.raw_data_path.exists():
-                subprocess.run(["dvc", "add", str(self.raw_data_path)], check=True)
-                logger.info(f"Added {self.raw_data_path} to DVC tracking")
+            # Add data file to DVC tracking
+            data_file = self.raw_data_path / "california_housing.csv"
+            if data_file.exists():
+                subprocess.run(["dvc", "add", str(data_file)], check=True)
+                self.log_info(f"Added {data_file} to DVC tracking")
             
-            # Configure remote if specified
+            # Configure Google Drive remote if folder ID is available
             gdrive_folder_id = os.getenv("GDRIVE_FOLDER_ID")
             if gdrive_folder_id:
                 subprocess.run([
-                    "dvc", "remote", "add", "-d", "gdrive", 
+                    "dvc", "remote", "add", "-d", "gdrive",
                     f"gdrive://{gdrive_folder_id}"
                 ], check=False)  # Don't fail if remote already exists
-                logger.info("DVC remote configured for Google Drive")
+                self.log_info("DVC remote configured for Google Drive")
                 
         except Exception as e:
-            logger.warning(f"DVC initialization failed: {e}")
-
-    def load_data(self, reload: bool = False) -> pd.DataFrame:
+            self.log_warning(f"DVC initialization failed: {e}")
+    
+    def process_data(self, force_reprocess: bool = False) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
         """
-        Load data, downloading if necessary.
+        Process data using the advanced pipeline or legacy method.
         
         Args:
-            reload: Force redownload of data
+            force_reprocess: Whether to force reprocessing even if processed data exists
             
         Returns:
-            DataFrame containing the data
+            Tuple of (train_df, val_df, test_df)
         """
-        if reload or not self.raw_data_path.exists():
-            return self.download_california_housing_data()
+        # Check if processed data already exists
+        if not force_reprocess and self._processed_data_exists():
+            self.log_info("Loading existing processed data...")
+            return self.load_processed_data()
+        
+        if self.use_pipeline:
+            return self._process_with_pipeline()
         else:
-            logger.info(f"Loading existing data from {self.raw_data_path}")
-            return pd.read_csv(self.raw_data_path)
-
-    def validate_data(self, df: pd.DataFrame) -> DataQualityReport:
-        """
-        Validate data using Pydantic models and generate quality report.
+            return self._process_legacy()
+    
+    def _processed_data_exists(self) -> bool:
+        """Check if processed data files exist."""
+        required_files = ["train.csv", "validation.csv", "test.csv"]
+        return all((self.processed_data_path / f).exists() for f in required_files)
+    
+    def _process_with_pipeline(self) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+        """Process data using the advanced pipeline."""
+        self.log_info("🚀 Processing data with advanced pipeline...")
         
-        Args:
-            df: DataFrame to validate
-            
-        Returns:
-            DataQualityReport with validation results
-        """
-        logger.info("Validating data quality")
+        # Ensure raw data exists
+        self.download_california_housing_data()
         
-        validation_errors = []
-        valid_records = 0
+        # Run pipeline
+        train_df, val_df, test_df = self.pipeline.run_pipeline()
         
-        for idx, row in df.iterrows():
-            try:
-                # Convert row to dict and validate with Pydantic
-                row_dict = row.to_dict()
-                CaliforniaHousingData(**row_dict)
-                valid_records += 1
-            except Exception as e:
-                validation_errors.append({
-                    "record_id": idx,
-                    "error": str(e),
-                    "timestamp": datetime.now().isoformat()
-                })
+        # Store pipeline artifacts for compatibility
+        self.scaler = load_scaler(self.processed_data_path)
+        self.data_profile = getattr(self.pipeline, 'data_profile', None)
         
-        # Generate data profile
-        data_profile = self._generate_data_profile(df)
+        # Store feature names (excluding target)
+        target_col = 'MedHouseVal'
+        if target_col in train_df.columns:
+            self.feature_names = [col for col in train_df.columns if col != target_col]
+        else:
+            self.feature_names = train_df.columns.tolist()
         
-        # Create quality report
-        report = DataQualityReport(
-            total_records=len(df),
-            valid_records=valid_records,
-            invalid_records=len(df) - valid_records,
-            validation_errors=validation_errors[:100],  # Limit errors shown
-            data_profile=data_profile
+        self.log_info("✅ Advanced pipeline processing completed")
+        return train_df, val_df, test_df
+    
+    def _process_legacy(self) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+        """Process data using legacy method for backward compatibility."""
+        self.log_info("Processing data with legacy method...")
+        
+        # Load data
+        df = self.load_data()
+        
+        # Basic validation
+        quality_report = self.validate_data(df)
+        self.data_profile = quality_report.data_profile
+        
+        # Preprocess
+        train_df, test_df = self.preprocess_data(df)
+        
+        # Create validation split from training data
+        train_features = [col for col in train_df.columns if col != 'MedHouseVal']
+        X_train = train_df[train_features]
+        y_train = train_df['MedHouseVal']
+        
+        val_size = self.pipeline_config.validation_size if self.pipeline_config else 0.2
+        X_train_split, X_val, y_train_split, y_val = train_test_split(
+            X_train, y_train, test_size=val_size, random_state=42
         )
         
-        logger.info(f"Data validation completed. Quality score: {report.quality_score:.2f}%")
-        return report
-
-    def _generate_data_profile(self, df: pd.DataFrame) -> Dict[str, Any]:
-        """Generate basic data profiling statistics."""
-        profile = {
-            "shape": df.shape,
-            "missing_values": df.isnull().sum().to_dict(),
-            "duplicates": df.duplicated().sum(),
-            "numeric_summary": {}
-        }
+        train_df_split = pd.concat([X_train_split, y_train_split], axis=1)
+        val_df = pd.concat([X_val, y_val], axis=1)
         
-        # Add numeric column statistics
-        numeric_cols = df.select_dtypes(include=[np.number]).columns
-        for col in numeric_cols:
-            profile["numeric_summary"][col] = {
-                "mean": float(df[col].mean()),
-                "std": float(df[col].std()),
-                "min": float(df[col].min()),
-                "max": float(df[col].max()),
-                "q25": float(df[col].quantile(0.25)),
-                "q50": float(df[col].quantile(0.50)),
-                "q75": float(df[col].quantile(0.75))
-            }
+        self.log_info("✅ Legacy processing completed")
+        return train_df_split, val_df, test_df
+    
+    def load_data(self) -> pd.DataFrame:
+        """Load raw data with automatic download if needed."""
+        data_file = self.download_california_housing_data()
         
-        return profile
-
-    def preprocess_data(self, 
-                       df: pd.DataFrame,
-                       test_size: float = 0.2,
-                       random_state: int = 42,
-                       scaling_method: str = "standard") -> Tuple[pd.DataFrame, pd.DataFrame]:
-        """
-        Preprocess data with feature engineering and scaling.
+        self.log_info(f"Loading data from {data_file}")
+        df = pd.read_csv(data_file)
         
-        Args:
-            df: Input DataFrame
-            test_size: Proportion of data for testing
-            random_state: Random seed for reproducibility
-            scaling_method: Scaling method ('standard', 'robust', or 'none')
+        self.log_info(f"Loaded dataset: {df.shape}")
+        return df
+    
+    def load_processed_data(self) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+        """Load previously processed data."""
+        try:
+            train_df, val_df, test_df = load_processed_data(str(self.processed_data_path))
             
-        Returns:
-            Tuple of (train_df, test_df)
-        """
-        logger.info("Preprocessing data")
+            # Load associated artifacts
+            self.scaler = load_scaler(str(self.processed_data_path))
+            
+            # Load feature names from config if available
+            config_path = self.processed_data_path / "pipeline_config.json"
+            if config_path.exists():
+                import json
+                with open(config_path, 'r') as f:
+                    config_data = json.load(f)
+                    self.feature_names = config_data.get('feature_columns', [])
+                    if 'MedHouseVal' in self.feature_names:
+                        self.feature_names.remove('MedHouseVal')
+            
+            self.log_info(f"Loaded processed data: Train {train_df.shape}, Val {val_df.shape}, Test {test_df.shape}")
+            return train_df, val_df, test_df
+            
+        except Exception as e:
+            self.log_error(f"Failed to load processed data: {e}")
+            # Fallback to reprocessing
+            return self.process_data(force_reprocess=True)
+    
+    def validate_data(self, data: pd.DataFrame) -> DataQualityReport:
+        """Validate data quality using pipeline validator or legacy method."""
+        if self.use_pipeline and self.pipeline:
+            return self.pipeline.validator.validate_data_quality(data)
+        else:
+            return self._validate_data_legacy(data)
+    
+    def _validate_data_legacy(self, data: pd.DataFrame) -> DataQualityReport:
+        """Legacy data validation method."""
+        total_records = len(data)
+        missing_count = data.isnull().sum().sum()
+        duplicates = data.duplicated().sum()
         
-        # Create feature engineering
-        df_processed = df.copy()
+        issues = []
+        if missing_count > 0:
+            issues.append(f"Found {missing_count} missing values")
+        if duplicates > 0:
+            issues.append(f"Found {duplicates} duplicate records")
         
+        # Simple quality score
+        quality_score = max(0, 10 - (missing_count / total_records) * 5 - (duplicates / total_records) * 3)
+        
+        return DataQualityReport(
+            overall_score=quality_score,
+            total_records=total_records,
+            missing_values_count=int(missing_count),
+            duplicate_records=int(duplicates),
+            data_types={"numeric": len(data.select_dtypes(include=[np.number]).columns)},
+            issues_found=issues,
+            data_profile={"total_rows": total_records, "total_columns": len(data.columns)}
+        )
+    
+    def preprocess_data(self, data: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
+        """Legacy preprocessing method for backward compatibility."""
         # Feature engineering
-        df_processed['rooms_per_household'] = df_processed['AveRooms']
-        df_processed['bedrooms_per_room'] = df_processed['AveBedrms'] / df_processed['AveRooms']
-        df_processed['population_per_household'] = df_processed['Population'] / df_processed['AveOccup']
+        df = data.copy()
         
-        # Handle infinite values
-        df_processed = df_processed.replace([np.inf, -np.inf], np.nan)
-        df_processed = df_processed.fillna(df_processed.mean())
+        # Create derived features (basic version)
+        if all(col in df.columns for col in ['AveRooms', 'AveBedrms', 'Population', 'AveOccup']):
+            df['rooms_per_household'] = df['AveRooms'] / df['AveOccup']
+            df['bedrooms_per_room'] = df['AveBedrms'] / df['AveRooms']
+            df['population_per_household'] = df['Population'] / df['AveOccup']
         
-        # Split features and target
-        feature_cols = [col for col in df_processed.columns if col != 'target']
-        X = df_processed[feature_cols]
-        y = df_processed['target']
+        # Split data
+        test_size = self.pipeline_config.test_size if self.pipeline_config else 0.2
+        train_df, test_df = train_test_split(df, test_size=test_size, random_state=42)
         
-        # Train-test split
-        X_train, X_test, y_train, y_test = train_test_split(
-            X, y, test_size=test_size, random_state=random_state
-        )
-        
-        # Apply scaling
-        scaler = None
-        if scaling_method == "standard":
-            scaler = StandardScaler()
-        elif scaling_method == "robust":
-            scaler = RobustScaler()
-        
-        if scaler:
-            X_train_scaled = pd.DataFrame(
-                scaler.fit_transform(X_train),
-                columns=X_train.columns,
-                index=X_train.index
-            )
-            X_test_scaled = pd.DataFrame(
-                scaler.transform(X_test),
-                columns=X_test.columns,
-                index=X_test.index
-            )
-            
-            # Save scaler
-            with open(self.scaler_path, 'wb') as f:
-                pickle.dump(scaler, f)
-            logger.info(f"Scaler saved to {self.scaler_path}")
+        # Initialize and fit scaler
+        scaler_type = self.pipeline_config.scaler_type if self.pipeline_config else "standard"
+        if scaler_type == "standard":
+            self.scaler = StandardScaler()
         else:
-            X_train_scaled = X_train
-            X_test_scaled = X_test
+            self.scaler = StandardScaler()  # Default fallback
         
-        # Combine with target
-        train_df = pd.concat([X_train_scaled, y_train], axis=1)
-        test_df = pd.concat([X_test_scaled, y_test], axis=1)
+        # Get feature columns (excluding target)
+        feature_cols = [col for col in train_df.columns if col != 'MedHouseVal']
+        self.feature_names = feature_cols
+        
+        # Fit scaler on training data
+        self.scaler.fit(train_df[feature_cols])
+        
+        # Transform both datasets
+        train_df[feature_cols] = self.scaler.transform(train_df[feature_cols])
+        test_df[feature_cols] = self.scaler.transform(test_df[feature_cols])
         
         # Save processed data
-        train_df.to_csv(self.train_data_path, index=False)
-        test_df.to_csv(self.test_data_path, index=False)
+        train_df.to_csv(self.processed_data_path / "train.csv", index=False)
+        test_df.to_csv(self.processed_data_path / "test.csv", index=False)
         
-        logger.info(f"Processed data saved to {self.processed_dir}")
-        logger.info(f"Train set shape: {train_df.shape}, Test set shape: {test_df.shape}")
+        # Save scaler
+        joblib.dump(self.scaler, self.processed_data_path / "scaler.joblib")
         
+        self.log_info("Legacy preprocessing completed")
         return train_df, test_df
-
-    def load_processed_data(self) -> Tuple[pd.DataFrame, pd.DataFrame]:
-        """
-        Load preprocessed train and test data.
-        
-        Returns:
-            Tuple of (train_df, test_df)
-        """
-        if not (self.train_data_path.exists() and self.test_data_path.exists()):
-            raise FileNotFoundError("Processed data not found. Run preprocess_data first.")
-        
-        train_df = pd.read_csv(self.train_data_path)
-        test_df = pd.read_csv(self.test_data_path)
-        
-        logger.info("Loaded processed data")
-        return train_df, test_df
-
-    def load_scaler(self):
-        """Load the saved scaler."""
-        if not self.scaler_path.exists():
-            raise FileNotFoundError("Scaler not found. Run preprocess_data first.")
-        
-        with open(self.scaler_path, 'rb') as f:
-            scaler = pickle.load(f)
-        
-        return scaler
-
-    def get_feature_names(self) -> List[str]:
-        """Get list of feature column names."""
-        if self.train_data_path.exists():
-            df = pd.read_csv(self.train_data_path)
-            return [col for col in df.columns if col != 'target']
+    
+    def prepare_inference_data(self, data: Union[Dict, pd.DataFrame, np.ndarray]) -> np.ndarray:
+        """Prepare data for model inference."""
+        if isinstance(data, dict):
+            # Convert dictionary to DataFrame
+            df = pd.DataFrame([data])
+        elif isinstance(data, np.ndarray):
+            # Assume it's already in the right format
+            if len(data.shape) == 1:
+                data = data.reshape(1, -1)
+            return data
         else:
-            # Default feature names
-            return [
-                'MedInc', 'HouseAge', 'AveRooms', 'AveBedrms', 
-                'Population', 'AveOccup', 'Latitude', 'Longitude',
-                'rooms_per_household', 'bedrooms_per_room', 'population_per_household'
-            ]
-
-    def save_data_profile(self, profile: Dict[str, Any]):
-        """Save data profile to JSON file."""
-        with open(self.data_profile_path, 'w') as f:
-            json.dump(profile, f, indent=2)
-        logger.info(f"Data profile saved to {self.data_profile_path}")
-
-    def load_data_profile(self) -> Optional[Dict[str, Any]]:
-        """Load data profile from JSON file."""
-        if self.data_profile_path.exists():
-            with open(self.data_profile_path, 'r') as f:
-                return json.load(f)
-        return None
-
-    def prepare_inference_data(self, data: Dict[str, Any]) -> np.ndarray:
-        """
-        Prepare single record for inference.
+            df = data.copy()
         
-        Args:
-            data: Dictionary with feature values
-            
-        Returns:
-            Preprocessed feature array ready for model inference
-        """
-        # Create DataFrame from input
-        df = pd.DataFrame([data])
+        # Ensure we have the scaler
+        if self.scaler is None:
+            self.scaler = load_scaler(str(self.processed_data_path))
+            if self.scaler is None:
+                raise ValueError("No fitted scaler available. Please process data first.")
         
-        # Apply same feature engineering as training
-        df['rooms_per_household'] = df['AveRooms']
-        df['bedrooms_per_room'] = df['AveBedrms'] / df['AveRooms']
-        df['population_per_household'] = df['Population'] / df['AveOccup']
+        # Get feature columns
+        if self.feature_names is None:
+            # Try to load from config
+            config_path = self.processed_data_path / "pipeline_config.json"
+            if config_path.exists():
+                import json
+                with open(config_path, 'r') as f:
+                    config_data = json.load(f)
+                    feature_columns = config_data.get('feature_columns', [])
+                    self.feature_names = [col for col in feature_columns if col != 'MedHouseVal']
         
-        # Handle infinite values
-        df = df.replace([np.inf, -np.inf], np.nan)
-        df = df.fillna(0)  # Use 0 for inference, as we can't use mean
+        if self.feature_names is None:
+            raise ValueError("Feature names not available. Please process data first.")
         
-        # Get feature columns in correct order
-        feature_cols = self.get_feature_names()
-        
-        # Ensure all features are present
-        for col in feature_cols:
-            if col not in df.columns:
-                df[col] = 0
+        # Ensure all required features are present
+        missing_features = set(self.feature_names) - set(df.columns)
+        if missing_features:
+            raise ValueError(f"Missing required features: {missing_features}")
         
         # Select and order features
-        df = df[feature_cols]
+        df_features = df[self.feature_names]
         
-        # Apply scaling if scaler exists
-        try:
-            scaler = self.load_scaler()
-            df_scaled = scaler.transform(df)
-            return df_scaled
-        except FileNotFoundError:
-            logger.warning("No scaler found, returning unscaled data")
-            return df.values
-
+        # Transform using fitted scaler
+        scaled_data = self.scaler.transform(df_features)
+        
+        return scaled_data
+    
     def get_data_summary(self) -> Dict[str, Any]:
         """Get comprehensive data summary."""
         summary = {
-            "data_paths": {
-                "raw": str(self.raw_data_path),
-                "processed": str(self.processed_data_path),
-                "train": str(self.train_data_path),
-                "test": str(self.test_data_path)
-            },
-            "files_exist": {
-                "raw": self.raw_data_path.exists(),
-                "train": self.train_data_path.exists(),
-                "test": self.test_data_path.exists(),
-                "scaler": self.scaler_path.exists()
-            }
+            'data_dir': str(self.data_dir),
+            'use_pipeline': self.use_pipeline,
+            'use_dvc': self.use_dvc
         }
         
-        # Add data shapes if files exist
-        if self.train_data_path.exists():
-            train_df = pd.read_csv(self.train_data_path)
-            summary["train_shape"] = train_df.shape
+        # Add processed data info if available
+        if self._processed_data_exists():
+            try:
+                train_df, val_df, test_df = self.load_processed_data()
+                summary.update({
+                    'datasets': {
+                        'train_shape': train_df.shape,
+                        'validation_shape': val_df.shape,
+                        'test_shape': test_df.shape,
+                        'feature_count': len(self.feature_names) if self.feature_names else 0,
+                        'total_samples': train_df.shape[0] + val_df.shape[0] + test_df.shape[0]
+                    }
+                })
+                
+                if self.feature_names:
+                    summary['feature_names'] = self.feature_names
+                
+            except Exception as e:
+                summary['data_loading_error'] = str(e)
         
-        if self.test_data_path.exists():
-            test_df = pd.read_csv(self.test_data_path)
-            summary["test_shape"] = test_df.shape
+        # Add data profile if available
+        if self.data_profile:
+            summary['data_profile'] = self.data_profile
         
-        return summary 
+        return summary
+    
+    def generate_data_report(self, save_path: Optional[str] = None) -> Dict[str, Any]:
+        """Generate comprehensive data report."""
+        if not self._processed_data_exists():
+            self.log_info("Processed data not found, running pipeline...")
+            self.process_data()
+        
+        # Load processed data
+        train_df, val_df, test_df = self.load_processed_data()
+        
+        # Generate report
+        report_path = save_path or str(self.processed_data_path / "comprehensive_data_report.json")
+        report = create_data_summary_report(train_df, val_df, test_df, save_path=report_path)
+        
+        self.log_info(f"📊 Comprehensive data report generated: {report_path}")
+        return report
+    
+    def save_data_profile(self, profile: Dict[str, Any]) -> None:
+        """Save data profile to file."""
+        profile_path = self.interim_data_path / "data_profile.json"
+        
+        import json
+        with open(profile_path, 'w') as f:
+            json.dump(profile, f, indent=2, default=str)
+        
+        self.log_info(f"Data profile saved to {profile_path}")
+    
+    def load_data_profile(self) -> Optional[Dict[str, Any]]:
+        """Load data profile from file."""
+        profile_path = self.interim_data_path / "data_profile.json"
+        
+        if profile_path.exists():
+            import json
+            with open(profile_path, 'r') as f:
+                return json.load(f)
+        
+        return None
+    
+    def get_feature_names(self) -> List[str]:
+        """Get feature names (excluding target)."""
+        if self.feature_names is None:
+            # Try to load from processed data
+            if self._processed_data_exists():
+                self.load_processed_data()
+        
+        return self.feature_names or []
+    
+    def load_scaler(self):
+        """Load the fitted scaler."""
+        if self.scaler is None:
+            self.scaler = load_scaler(str(self.processed_data_path))
+        return self.scaler 
