@@ -142,9 +142,15 @@ mlflow ui
 
 ```bash
 # Start FastAPI service
-uvicorn src.api.main:app --host 0.0.0.0 --port 8000 --reload
+python scripts/run_api.py
 
-# API Documentation available at: http://localhost:8000/docs
+# Or with custom options:
+python scripts/run_api.py --host 0.0.0.0 --port 8000 --reload --debug
+
+# API Documentation available at:
+# - Swagger UI: http://localhost:8000/docs
+# - ReDoc: http://localhost:8000/redoc
+# - Health Check: http://localhost:8000/health
 ```
 
 ### 6. Docker Deployment
@@ -177,7 +183,7 @@ docker run --gpus all -p 8000:8000 california-housing-mlops
 import requests
 
 # Prediction request
-response = requests.post("http://localhost:8000/predict", json={
+response = requests.post("http://localhost:8000/api/v1/predict", json={
     "features": {
         "MedInc": 8.3252,
         "HouseAge": 41.0,
@@ -191,26 +197,54 @@ response = requests.post("http://localhost:8000/predict", json={
 })
 
 print(response.json())
-# Output: {"prediction": 4.526, "model_name": "xgboost_gpu", "model_version": "1.0.0"}
+# Output: {
+#   "prediction": 4.526,
+#   "model_name": "xgboost_gpu",
+#   "model_version": "1.0.0",
+#   "prediction_id": "pred_123456"
+# }
 ```
 
 ### Batch Prediction
 
 ```python
 # Batch prediction
-response = requests.post("http://localhost:8000/predict/batch", json={
+response = requests.post("http://localhost:8000/api/v1/predict/batch", json={
     "features": [
-        {"MedInc": 8.3252, "HouseAge": 41.0, ...},
-        {"MedInc": 7.2574, "HouseAge": 21.0, ...}
+        {
+            "MedInc": 8.3252, "HouseAge": 41.0, "AveRooms": 6.984,
+            "AveBedrms": 1.024, "Population": 322.0, "AveOccup": 2.555,
+            "Latitude": 37.88, "Longitude": -122.23
+        },
+        {
+            "MedInc": 7.2574, "HouseAge": 21.0, "AveRooms": 5.631,
+            "AveBedrms": 0.971, "Population": 2401.0, "AveOccup": 2.109,
+            "Latitude": 39.43, "Longitude": -121.22
+        }
     ]
 })
+
+print(response.json())
+# Output: {
+#   "predictions": [...],
+#   "batch_id": "batch_789",
+#   "processing_time": 0.045
+# }
 ```
 
 ### Model Information
 
 ```python
-# Get model metadata
-response = requests.get("http://localhost:8000/model/info")
+# List all available models
+response = requests.get("http://localhost:8000/api/v1/models")
+print(response.json())
+
+# Get specific model metadata
+response = requests.get("http://localhost:8000/api/v1/models/xgboost_gpu")
+print(response.json())
+
+# System status
+response = requests.get("http://localhost:8000/api/v1/system/status")
 print(response.json())
 ```
 
@@ -252,12 +286,17 @@ xgb_config = {
 
 ### Prometheus Metrics
 
-Access metrics at `http://localhost:8000/metrics`:
+Access metrics at `http://localhost:8000/api/v1/metrics`:
 
-- `prediction_duration_seconds`: Prediction latency
-- `prediction_requests_total`: Request counters
-- `gpu_utilization_percent`: GPU usage
-- `gpu_memory_used_bytes`: GPU memory consumption
+- `api_requests_total`: Total API requests by method, endpoint, status
+- `api_request_duration_seconds`: Request duration histograms
+- `predictions_total`: Total predictions by model and type
+- `prediction_duration_seconds`: Prediction latency histograms
+- `models_loaded_count`: Number of loaded models in cache
+- `system_cpu_usage_percent`: System CPU utilization
+- `system_memory_usage_bytes`: System memory usage
+- `gpu_utilization_percent`: GPU usage (if available)
+- `gpu_memory_used_bytes`: GPU memory consumption (if available)
 
 ### MLflow Tracking
 
@@ -332,12 +371,12 @@ flake8 src/ tests/
 - [x] **Phase 1**: Core MLOps Infrastructure ✅
 - [x] **Phase 2**: Data Management & Validation ✅  
 - [x] **Phase 3**: MLflow Integration ✅
-- [x] **Phase 4**: DVC Data Versioning ✅ ✨ **LATEST**
-- [ ] **Phase 5**: GPU Model Training (In Progress)
-- [ ] **Phase 6**: FastAPI Service
-- [ ] **Phase 7**: Monitoring & Observability
-- [ ] **Phase 8**: CI/CD Pipeline
-- [ ] **Phase 9**: Production Deployment
+- [x] **Phase 4**: DVC Data Versioning ✅
+- [x] **Phase 5**: GPU Model Training ✅
+- [x] **Phase 6**: FastAPI Service ✅ ✨ **LATEST**
+- [x] **Phase 7**: Prometheus Monitoring ✅ ✨ **LATEST**
+- [ ] **Phase 8**: Database Integration & CI/CD Pipeline
+- [ ] **Phase 9**: Docker Containerization & Production Deployment
 
 See [tasks.md](tasks.md) for detailed implementation plan.
 
@@ -361,11 +400,21 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 🚀 Current Status
 
-✅ **Ready for Production**: Complete MLOps foundation with:
+✅ **Production-Ready MLOps Pipeline**: Complete end-to-end system with:
 - ✅ **Data Versioning**: DVC tracking California Housing dataset (20,640 rows, 1.9MB)
-- ✅ **Experiment Tracking**: MLflow configured and ready
-- ✅ **Data Validation**: Pydantic models with comprehensive validation
-- ✅ **Development Setup**: Structured codebase with best practices
-- 🔄 **Next**: GPU-accelerated model training implementation
+- ✅ **Experiment Tracking**: MLflow with comprehensive model registry
+- ✅ **GPU Training**: 5 GPU-accelerated models (XGBoost, cuML, PyTorch, LightGBM)
+- ✅ **REST API**: Production FastAPI service with comprehensive features:
+  - Single and batch prediction endpoints (`/predict`, `/predict/batch`)
+  - Model management and metadata (`/models`, `/models/{name}`)
+  - Health monitoring and system status (`/health`, `/system/status`)
+  - Prometheus metrics integration (`/metrics`)
+  - Interactive API documentation (`/docs`, `/redoc`)
+  - Rate limiting, CORS, and security middleware
+  - Model caching and MLflow integration
+- ✅ **Data Pipeline**: Advanced preprocessing with feature engineering
+- ✅ **Monitoring**: Prometheus metrics with GPU monitoring
+- ✅ **Testing**: Comprehensive test suite for all components
+- 🔄 **Next**: Database integration and Docker containerization
 
 ---
