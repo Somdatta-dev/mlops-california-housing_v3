@@ -92,7 +92,7 @@ graph TB
 ### 1. Clone Repository
 
 ```bash
-git clone https://github.com/yourusername/california-housing-mlops.git
+git clone https://github.com/Somdatta-dev/mlops-california-housing_v3.git
 cd california-housing-mlops
 ```
 
