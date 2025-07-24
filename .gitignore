@@ -127,7 +127,12 @@ mlruns/
 mlartifacts/
 
 # DVC
-/data/
+/data/raw/*.csv
+/data/raw/*.parquet
+/data/processed/*.csv
+/data/processed/*.parquet
+/data/interim/*.csv
+/data/interim/*.parquet
 .dvc/cache/
 .dvc/tmp/
 .dvc/logs/
@@ -141,16 +146,8 @@ models/
 *.pth
 *.onnx
 
-# Data files
-*.csv
-*.parquet
-*.feather
-*.h5
-*.hdf5
-data/raw/
-data/processed/
-data/interim/
-data/external/
+# Data files (specific patterns to allow .dvc files)
+# Note: .dvc files should be tracked in git, only ignore actual data files
 
 # Logs
 logs/
