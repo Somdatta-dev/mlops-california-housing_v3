@@ -47,7 +47,8 @@ class CaliforniaHousingData(BaseModel):
         ...,
         description="Population of block group",
         ge=3.0,
-        le=35682.0
+        le=35682.0,
+        alias="Population"
     )
     
     ave_occup: float = Field(
@@ -62,14 +63,16 @@ class CaliforniaHousingData(BaseModel):
         ...,
         description="Latitude coordinate",
         ge=32.54,
-        le=41.95
+        le=41.95,
+        alias="Latitude"
     )
     
     longitude: float = Field(
         ...,
         description="Longitude coordinate",
         ge=-124.35,
-        le=-114.31
+        le=-114.31,
+        alias="Longitude"
     )
     
     target: Optional[float] = Field(

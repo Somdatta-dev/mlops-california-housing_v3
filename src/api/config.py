@@ -38,7 +38,7 @@ class APIConfig(BaseSettings):
     cors_headers: List[str] = Field(default=["*"], env="CORS_HEADERS")
     
     # Model Settings
-    default_model_name: str = Field(default="random_forest", env="DEFAULT_MODEL_NAME")
+    default_model_name: str = Field(default="linear_regression", env="DEFAULT_MODEL_NAME")
     model_cache_size: int = Field(default=3, env="MODEL_CACHE_SIZE")
     model_timeout: float = Field(default=30.0, env="MODEL_TIMEOUT")
     

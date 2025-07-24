@@ -316,6 +316,7 @@ class ModelLoader:
                             mlflow_run_id=latest_version.run_id,
                             artifact_path=model.name,  # Use model name as artifact path
                             model_path=Path(f"models:/{model.name}/{latest_version.version}"),
+                            training_date=training_date,  # Add this line that was missing
                             feature_names=[
                                 'MedInc', 'HouseAge', 'AveRooms', 'AveBedrms', 
                                 'Population', 'AveOccup', 'Latitude', 'Longitude'
@@ -374,8 +375,8 @@ class ModelLoader:
         try:
             # Load model artifacts
             model, scaler, feature_names = self._load_model_artifacts(
-                metadata.mlflow_run_id, 
-                metadata.artifact_path
+                metadata.name, 
+                metadata.version
             )
             
             # Create loaded model
