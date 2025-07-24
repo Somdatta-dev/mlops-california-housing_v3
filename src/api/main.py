@@ -19,10 +19,14 @@ from .endpoints import router
 from .model_loader import initialize_model_loader
 from .metrics import start_metrics_collection, get_metrics
 from .exceptions import APIException
+from ..database import init_database
 
 # Setup configuration and logging
 config = setup_environment()
-setup_logging(**config.logging_config)
+setup_logging(
+    log_level=config.log_level,
+    log_file=config.log_file
+)
 logger = get_logger(__name__)
 
 
@@ -39,6 +43,11 @@ async def lifespan(app: FastAPI):
     logger.info(f"Prometheus metrics: {config.enable_prometheus}")
     
     try:
+        # Initialize database
+        logger.info("Initializing database...")
+        init_database(config.database_url, config.database_echo)
+        logger.info("Database initialized successfully")
+        
         # Initialize model loader
         logger.info("Initializing model loader...")
         model_loader = await initialize_model_loader()
@@ -183,11 +192,15 @@ async def api_exception_handler(request: Request, exc: APIException):
     """Global exception handler for API exceptions."""
     logger.error(f"API Exception: {exc.detail} (Code: {exc.error_code})")
     
-    return {
-        "error": exc.detail,
-        "error_code": exc.error_code,
-        "request_id": getattr(request.state, 'request_id', None)
-    }
+    from fastapi.responses import JSONResponse
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "error": exc.detail,
+            "error_code": exc.error_code,
+            "request_id": getattr(request.state, 'request_id', None)
+        }
+    )
 
 
 @app.middleware("http")

@@ -99,7 +99,10 @@ def main():
         config.log_level = args.log_level
     
     # Setup logging
-    setup_logging(**config.logging_config)
+    setup_logging(
+        log_level=config.log_level,
+        log_file=config.log_file
+    )
     logger = get_logger(__name__)
     
     logger.info("Starting California Housing Price Prediction API")

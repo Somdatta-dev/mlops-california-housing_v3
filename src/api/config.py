@@ -4,7 +4,8 @@ FastAPI application configuration management.
 
 import os
 from typing import Optional, List, Dict, Any
-from pydantic import BaseSettings, Field, validator
+from pydantic import Field, validator
+from pydantic_settings import BaseSettings
 import logging
 
 
@@ -37,17 +38,17 @@ class APIConfig(BaseSettings):
     cors_headers: List[str] = Field(default=["*"], env="CORS_HEADERS")
     
     # Model Settings
-    default_model_name: str = Field(default="xgboost_gpu", env="DEFAULT_MODEL_NAME")
+    default_model_name: str = Field(default="random_forest", env="DEFAULT_MODEL_NAME")
     model_cache_size: int = Field(default=3, env="MODEL_CACHE_SIZE")
     model_timeout: float = Field(default=30.0, env="MODEL_TIMEOUT")
     
     # MLflow Settings
-    mlflow_tracking_uri: str = Field(default="http://localhost:5000", env="MLFLOW_TRACKING_URI")
+    mlflow_tracking_uri: str = Field(default="./mlruns", env="MLFLOW_TRACKING_URI")
     mlflow_experiment_name: str = Field(
         default="california_housing_prediction", 
         env="MLFLOW_EXPERIMENT_NAME"
     )
-    mlflow_model_stage: str = Field(default="Production", env="MLFLOW_MODEL_STAGE")
+    mlflow_model_stage: str = Field(default="None", env="MLFLOW_MODEL_STAGE")
     
     # Database Settings
     database_url: str = Field(default="sqlite:///./api_logs.db", env="DATABASE_URL")

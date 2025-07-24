@@ -79,9 +79,9 @@ class CaliforniaHousingData(BaseModel):
         le=5.00001
     )
 
-    class Config:
-        allow_population_by_field_name = True
-        schema_extra = {
+    model_config = {
+        "populate_by_name": True,
+        "json_schema_extra": {
             "example": {
                 "MedInc": 8.3252,
                 "HouseAge": 41.0,
@@ -94,6 +94,7 @@ class CaliforniaHousingData(BaseModel):
                 "target": 4.526
             }
         }
+    }
 
     @validator('ave_bedrms')
     def validate_bedroom_ratio(cls, v, values):
@@ -111,7 +112,7 @@ class CaliforniaHousingData(BaseModel):
             raise ValueError(f"Average occupancy ({v}) seems unreasonably high (>50)")
         return v
 
-    @root_validator
+    @root_validator(skip_on_failure=True)
     def validate_california_coordinates(cls, values):
         """Validate that coordinates are within California boundaries."""
         lat, lon = values.get('latitude'), values.get('longitude')
@@ -132,8 +133,8 @@ class HousingPredictionRequest(BaseModel):
     """
     features: CaliforniaHousingData = Field(..., description="Housing features for prediction")
     
-    class Config:
-        schema_extra = {
+    model_config = {
+        "json_schema_extra": {
             "example": {
                 "features": {
                     "MedInc": 8.3252,
@@ -147,6 +148,7 @@ class HousingPredictionRequest(BaseModel):
                 }
             }
         }
+    }
 
 
 class BatchPredictionRequest(BaseModel):
@@ -180,8 +182,8 @@ class PredictionResponse(BaseModel):
         None, description="Prediction confidence interval"
     )
     
-    class Config:
-        schema_extra = {
+    model_config = {
+        "json_schema_extra": {
             "example": {
                 "prediction": 4.526,
                 "model_name": "xgboost_gpu",
@@ -190,6 +192,7 @@ class PredictionResponse(BaseModel):
                 "confidence_interval": {"lower": 4.2, "upper": 4.8}
             }
         }
+    }
 
 
 class BatchPredictionResponse(BaseModel):
@@ -202,8 +205,8 @@ class BatchPredictionResponse(BaseModel):
     batch_id: str = Field(..., description="Unique batch identifier")
     processing_time: float = Field(..., description="Processing time in seconds")
     
-    class Config:
-        schema_extra = {
+    model_config = {
+        "json_schema_extra": {
             "example": {
                 "predictions": [
                     {
@@ -217,6 +220,7 @@ class BatchPredictionResponse(BaseModel):
                 "processing_time": 0.045
             }
         }
+    }
 
 
 class ModelInfo(BaseModel):
@@ -230,8 +234,8 @@ class ModelInfo(BaseModel):
     training_date: str = Field(..., description="Model training date")
     gpu_accelerated: bool = Field(..., description="Whether model uses GPU acceleration")
     
-    class Config:
-        schema_extra = {
+    model_config = {
+        "json_schema_extra": {
             "example": {
                 "name": "xgboost_gpu",
                 "version": "1.0.0",
@@ -245,6 +249,7 @@ class ModelInfo(BaseModel):
                 "gpu_accelerated": True
             }
         }
+    }
 
 
 class ErrorResponse(BaseModel):
@@ -255,8 +260,8 @@ class ErrorResponse(BaseModel):
     error_code: str = Field(..., description="Error code")
     details: Optional[Dict[str, Any]] = Field(None, description="Additional error details")
     
-    class Config:
-        schema_extra = {
+    model_config = {
+        "json_schema_extra": {
             "example": {
                 "error": "Invalid input data",
                 "error_code": "VALIDATION_ERROR",
@@ -266,6 +271,7 @@ class ErrorResponse(BaseModel):
                 }
             }
         }
+    }
 
 
 class DataQualityReport(BaseModel):
@@ -289,8 +295,8 @@ class DataQualityReport(BaseModel):
             return 0.0
         return (self.valid_records / self.total_records) * 100.0
     
-    class Config:
-        schema_extra = {
+    model_config = {
+        "json_schema_extra": {
             "example": {
                 "total_records": 1000,
                 "valid_records": 985,
@@ -304,4 +310,5 @@ class DataQualityReport(BaseModel):
                     "missing_values": 0
                 }
             }
-        } 
+        }
+    } 

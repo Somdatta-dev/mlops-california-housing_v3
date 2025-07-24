@@ -207,45 +207,32 @@ class ModelLoader:
     
     def _generate_model_key(self, model_name: str, version: Optional[str] = None) -> str:
         """Generate cache key for model."""
-        key = f"{model_name}"
         if version:
-            key += f":{version}"
-        return key
+            return f"{model_name}:{version}"
+        return model_name
     
-    def _load_model_artifacts(self, run_id: str, artifact_path: str) -> Tuple[Any, Optional[Any], Optional[List[str]]]:
+    def _load_model_artifacts(self, model_name: str, version: str) -> Tuple[Any, Optional[Any], Optional[List[str]]]:
         """Load model and associated artifacts from MLflow."""
         try:
-            # Load the model
-            model_uri = f"runs:/{run_id}/{artifact_path}"
+            # Load the model using registered model URI
+            model_uri = f"models:/{model_name}/{version}"
             model = mlflow.sklearn.load_model(model_uri)
-            logger.info(f"Loaded model from MLflow: {model_uri}")
+            logger.info(f"Loaded model from MLflow registry: {model_uri}")
             
-            # Try to load scaler
+            # For our simple models, we don't have scalers
             scaler = None
-            try:
-                scaler_uri = f"runs:/{run_id}/scaler"
-                client = mlflow.tracking.MlflowClient()
-                scaler_path = client.download_artifacts(run_id, "scaler.pkl")
-                scaler = joblib.load(scaler_path)
-                logger.info(f"Loaded scaler from MLflow: {scaler_uri}")
-            except Exception as e:
-                logger.warning(f"Could not load scaler: {e}")
             
-            # Try to load feature names
-            feature_names = None
-            try:
-                client = mlflow.tracking.MlflowClient()
-                feature_names_path = client.download_artifacts(run_id, "feature_names.json")
-                with open(feature_names_path, 'r') as f:
-                    feature_names = json.load(f)
-                logger.info(f"Loaded feature names: {len(feature_names)} features")
-            except Exception as e:
-                logger.warning(f"Could not load feature names: {e}")
+            # Use standard feature names for California housing
+            feature_names = [
+                'MedInc', 'HouseAge', 'AveRooms', 'AveBedrms', 
+                'Population', 'AveOccup', 'Latitude', 'Longitude'
+            ]
+            logger.info(f"Using standard feature names: {len(feature_names)} features")
             
             return model, scaler, feature_names
             
         except Exception as e:
-            raise ModelLoadError("mlflow_model", f"Failed to load artifacts: {e}")
+            raise ModelLoadError(model_name, f"Failed to load model from registry: {e}")
     
     def _get_model_metadata(self, run_id: str) -> ModelMetadata:
         """Get model metadata from MLflow run."""
@@ -299,36 +286,56 @@ class ModelLoader:
         """Refresh list of available models from MLflow."""
         try:
             client = mlflow.tracking.MlflowClient()
-            experiment = client.get_experiment_by_name(config.mlflow_experiment_name)
             
-            if not experiment:
-                logger.warning(f"Experiment '{config.mlflow_experiment_name}' not found")
-                return
-            
-            runs = client.search_runs(
-                experiment_ids=[experiment.experiment_id],
-                filter_string="status = 'FINISHED'",
-                order_by=["start_time DESC"],
-                max_results=100
-            )
+            # Get registered models instead of searching runs
+            registered_models = client.search_registered_models()
             
             self._available_models.clear()
             
-            for run in runs:
+            for model in registered_models:
                 try:
-                    metadata = self._get_model_metadata(run.info.run_id)
-                    model_key = self._generate_model_key(metadata.name, metadata.version)
-                    self._available_models[model_key] = metadata
-                    logger.debug(f"Found model: {model_key}")
+                    # Get the latest version
+                    latest_versions = client.get_latest_versions(model.name, stages=["None"])
+                    if latest_versions:
+                        latest_version = latest_versions[0]
+                        
+                        # Create metadata from registered model
+                        # Handle timestamp conversion
+                        try:
+                            if isinstance(latest_version.creation_timestamp, str):
+                                training_date = datetime.fromisoformat(latest_version.creation_timestamp)
+                            else:
+                                training_date = datetime.fromtimestamp(latest_version.creation_timestamp / 1000)
+                        except:
+                            training_date = datetime.now()
+                        
+                        metadata = ModelMetadata(
+                            name=model.name,
+                            version=str(latest_version.version),  # Convert to string
+                            algorithm=model.name.replace('_', ' ').title(),
+                            mlflow_run_id=latest_version.run_id,
+                            artifact_path=model.name,  # Use model name as artifact path
+                            model_path=Path(f"models:/{model.name}/{latest_version.version}"),
+                            feature_names=[
+                                'MedInc', 'HouseAge', 'AveRooms', 'AveBedrms', 
+                                'Population', 'AveOccup', 'Latitude', 'Longitude'
+                            ]
+                        )
+                        
+                        model_key = self._generate_model_key(metadata.name, metadata.version)
+                        self._available_models[model_key] = metadata
+                        logger.info(f"Found registered model: {model_key}")
+                        
                 except Exception as e:
-                    logger.warning(f"Failed to process run {run.info.run_id}: {e}")
+                    logger.warning(f"Failed to process registered model {model.name}: {e}")
             
             self._last_refresh = datetime.now()
             logger.info(f"Refreshed {len(self._available_models)} available models")
             
         except Exception as e:
             logger.error(f"Failed to refresh available models: {e}")
-            raise ConfigurationError(f"MLflow connection failed: {e}")
+            # Don't raise exception, just log warning to allow graceful degradation
+            logger.warning("Continuing with empty model list")
     
     async def load_model(
         self, 
@@ -352,15 +359,15 @@ class ModelLoader:
         
         # Find model metadata
         if model_key not in self._available_models:
-            # Try with default version
-            if not version:
-                model_key_with_version = f"{model_name}:1.0.0"
-                if model_key_with_version in self._available_models:
-                    model_key = model_key_with_version
-                else:
-                    raise ModelNotFoundError(model_name)
+            # Try to find model with any version
+            matching_keys = [k for k in self._available_models.keys() if k.startswith(f"{model_name}:")]
+            if matching_keys:
+                model_key = matching_keys[0]  # Use first matching version
+                logger.info(f"Found model with key: {model_key}")
             else:
-                raise ModelNotFoundError(f"{model_name}:{version}")
+                available_keys = list(self._available_models.keys())
+                logger.error(f"Model '{model_name}' not found. Available: {available_keys}")
+                raise ModelNotFoundError(model_name, f"Model '{model_name}' not found")
         
         metadata = self._available_models[model_key]
         

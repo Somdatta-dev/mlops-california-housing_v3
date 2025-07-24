@@ -26,6 +26,7 @@ A complete **MLOps pipeline** for California Housing price prediction featuring 
 
 ### 📊 Monitoring & Observability  
 - **Prometheus**: Metrics collection and monitoring
+- **Database Logging**: SQLite with comprehensive prediction and performance tracking
 - **GPU Monitoring**: Real-time NVIDIA GPU utilization tracking
 - **Structured Logging**: Comprehensive logging with Rich formatting
 - **Data Quality**: Automated validation and quality reporting
@@ -67,6 +68,7 @@ graph TB
 ├── 📁 src/                     # Source code
 │   ├── api/                    # FastAPI application
 │   ├── data/                   # Data management
+│   ├── database/               # Database models and logging
 │   ├── models/                 # ML model implementations
 │   ├── monitoring/             # Monitoring utilities
 │   └── utils/                  # Common utilities
@@ -121,6 +123,9 @@ dvc status
 
 # View tracked data
 ls data/raw/
+
+# Initialize database with model metadata
+python scripts/init_database.py --initial-data
 
 # Optional: Set up Google Drive remote for team collaboration
 # Follow instructions in dvc_setup_instructions.md
@@ -284,6 +289,20 @@ xgb_config = {
 
 ## 📊 Monitoring
 
+### Database Logging
+
+All predictions and system metrics are automatically logged to SQLite database:
+
+- **Prediction Logs**: Every API request/response with full metadata
+- **Performance Metrics**: System and model performance tracking
+- **System Health**: Resource utilization and health monitoring
+- **Model Versions**: Complete model metadata and performance history
+
+```bash
+# View database contents
+python scripts/init_database.py --log-level INFO
+```
+
 ### Prometheus Metrics
 
 Access metrics at `http://localhost:8000/api/v1/metrics`:
@@ -373,10 +392,11 @@ flake8 src/ tests/
 - [x] **Phase 3**: MLflow Integration ✅
 - [x] **Phase 4**: DVC Data Versioning ✅
 - [x] **Phase 5**: GPU Model Training ✅
-- [x] **Phase 6**: FastAPI Service ✅ ✨ **LATEST**
-- [x] **Phase 7**: Prometheus Monitoring ✅ ✨ **LATEST**
-- [ ] **Phase 8**: Database Integration & CI/CD Pipeline
-- [ ] **Phase 9**: Docker Containerization & Production Deployment
+- [x] **Phase 6**: FastAPI Service ✅
+- [x] **Phase 7**: Prometheus Monitoring ✅
+- [x] **Phase 8**: Database Integration ✅ ✨ **LATEST**
+- [ ] **Phase 9**: Docker Containerization & CI/CD Pipeline
+- [ ] **Phase 10**: Production Deployment & Dashboard
 
 See [tasks.md](tasks.md) for detailed implementation plan.
 
@@ -412,9 +432,15 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
   - Interactive API documentation (`/docs`, `/redoc`)
   - Rate limiting, CORS, and security middleware
   - Model caching and MLflow integration
+- ✅ **Database Integration**: SQLite with comprehensive logging:
+  - Prediction request/response logging with full metadata
+  - Performance metrics tracking (system, GPU, API)
+  - System health monitoring with resource utilization
+  - Model version management and performance history
+  - Database migration scripts and connection pooling
 - ✅ **Data Pipeline**: Advanced preprocessing with feature engineering
 - ✅ **Monitoring**: Prometheus metrics with GPU monitoring
 - ✅ **Testing**: Comprehensive test suite for all components
-- 🔄 **Next**: Database integration and Docker containerization
+- 🔄 **Next**: Docker containerization and CI/CD pipeline
 
 ---
