@@ -5,7 +5,9 @@ scikit-learn
 scipy
 
 # GPU-Accelerated Libraries
-torch
+torch==2.7.0
+torchvision==0.22.0
+torchaudio==2.7.0
 xgboost
 lightgbm
 cuml-cu12
@@ -29,7 +31,6 @@ nvidia-ml-py
 
 # Database
 sqlalchemy
-sqlite3
 alembic
 
 # Data Validation
@@ -37,7 +38,6 @@ pyjanitor
 
 # Containerization and Deployment
 docker
-docker-compose
 
 # Development and Testing
 pytest
@@ -59,3 +59,4 @@ tqdm
 click
 rich
 loguru 
+PyYAML>=6.0.1 

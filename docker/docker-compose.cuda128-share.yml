@@ -1,0 +1,76 @@
+# MLOps Application - CUDA 12.8 Compatible Docker Compose
+# This compose file uses the shareable CUDA 12.8 Dockerfile
+# Author: MLOps Team
+# Version: 1.0
+
+services:
+  # MLOps Application with CUDA 12.8 support
+  mlops-app:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.cuda128-share
+    image: mlops-cuda-app:cuda128-v1.0
+    container_name: mlops_cuda_app
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+      - MLFLOW_TRACKING_URI=http://mlflow:5000
+      - PYTHONPATH=/app
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    volumes:
+      - ../models:/app/models
+      - ../data:/app/data
+      - ../logs:/app/logs
+      - ../mlruns:/app/mlruns
+      - ../mlflow_db:/app/mlflow_db
+    depends_on:
+      - mlflow
+    networks:
+      - mlops-network
+
+  # MLflow Tracking Server
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:v2.12.1
+    container_name: mlops_mlflow
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    environment:
+      - MLFLOW_BACKEND_STORE_URI=sqlite:////mlflow/mlflow.db
+      - MLFLOW_ARTIFACT_ROOT=/mlflow/artifacts
+    volumes:
+      - ../mlruns:/mlflow/artifacts
+      - ../mlflow_db:/mlflow
+    command: ["mlflow", "server", "--host", "0.0.0.0", "--port", "5000", "--backend-store-uri", "sqlite:////mlflow/mlflow.db", "--default-artifact-root", "/mlflow/artifacts"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    networks:
+      - mlops-network
+
+networks:
+  mlops-network:
+    driver: bridge
+
+volumes:
+  mlflow-data:
+  app-models:
+  app-logs:
