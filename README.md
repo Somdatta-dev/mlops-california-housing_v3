@@ -457,6 +457,19 @@ pytest tests/test_models.py -v      # Model tests
 pytest tests/test_api.py -v         # API tests
 ```
 
+### Advanced Testing
+The `tests/test_model_comparison.py` script provides a comprehensive suite for validating the model comparison and selection system. It ensures that model evaluation, statistical testing, and MLflow registration work correctly.
+
+- **`test_evaluation`**: Verifies that cross-validated evaluation produces the correct metrics.
+- **`test_select_best`**: Ensures the best model is selected based on prioritized metrics.
+- **`test_statistical_tests`**: Confirms that paired t-tests run without errors.
+- **`test_register_best`**: Checks that the best model is correctly registered and staged in the MLflow Model Registry.
+
+To run these specific tests:
+```bash
+pytest tests/test_model_comparison.py -v
+```
+
 ## 🚀 Deployment
 
 ### Production Deployment
