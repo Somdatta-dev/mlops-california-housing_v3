@@ -62,24 +62,35 @@ graph TB
 
 ```
 ├── 📁 data/                    # Data storage
-│   ├── raw/                    # Raw datasets
+│   ├── raw/                    # Raw datasets (DVC tracked)
 │   ├── processed/              # Processed data
-│   └── interim/                # Intermediate processing
+│   ├── interim/                # Intermediate processing
+│   └── external/               # External data sources
 ├── 📁 src/                     # Source code
 │   ├── api/                    # FastAPI application
-│   ├── data/                   # Data management
+│   ├── data/                   # Data management and processing
 │   ├── database/               # Database models and logging
-│   ├── models/                 # ML model implementations
-│   ├── monitoring/             # Monitoring utilities
+│   ├── monitoring/             # Monitoring utilities (placeholder)
 │   └── utils/                  # Common utilities
-├── 📁 notebooks/               # Jupyter notebooks
+├── 📁 scripts/                 # Setup and utility scripts
+│   ├── train_and_dashboard.py  # One-click training + MLflow
+│   ├── run_api.py              # FastAPI server launcher
+│   ├── init_database.py        # Database initialization
+│   └── ...                     # Other utility scripts
 ├── 📁 tests/                   # Unit and integration tests
 ├── 📁 docker/                  # Docker configurations
-├── 📁 .github/workflows/       # CI/CD pipelines
-├── 📁 scripts/                 # Setup and utility scripts
+│   ├── Dockerfile              # Standard CUDA 12.8 setup
+│   ├── Dockerfile.cuda128-share # Shareable production setup
+│   ├── docker-compose.yml      # Standard compose configuration
+│   ├── docker-compose.cuda128-share.yml # Shareable compose
+│   └── README-CUDA128-SHARE.md # Docker sharing guide
+├── 📁 notebooks/               # Jupyter notebooks (placeholder)
+├── 📁 mlflow_db/              # MLflow artifacts and database
 ├── 📄 requirements.txt         # Python dependencies
-├── 📄 .env.template           # Environment configuration
-└── 📄 tasks.md                # Implementation roadmap
+├── 📄 requirements-dev.txt     # Development dependencies
+├── 📄 .env.template           # Environment configuration template
+├── 📄 tasks.md                # Implementation roadmap
+└── 📄 dvc_setup_instructions.md # DVC setup guide
 ```
 
 ## 🚀 Quick Start
@@ -224,10 +235,13 @@ python scripts/run_api.py --host 0.0.0.0 --port 8000 --reload --debug
 
 ```bash
 # Build CUDA-enabled container
-docker build -t california-housing-mlops -f docker/Dockerfile .
+docker build -t mlops-cuda-app:latest -f docker/Dockerfile .
 
-# Run container with GPU support
-docker run --gpus all -p 8000:8000 california-housing-mlops
+# Run container with GPU support (standalone)
+docker run --gpus all -p 8000:8000 -p 5000:5000 mlops-cuda-app:latest
+
+# Recommended: Use Docker Compose for full stack
+docker compose -f docker/docker-compose.yml up --build
 ```
 
 ## 🎯 Model Performance
@@ -448,21 +462,22 @@ pytest tests/test_api.py -v         # API tests
 ### Production Deployment
 
 ```bash
-# Build production image
-docker build -t housing-predictor:prod -f docker/Dockerfile.prod .
+# Build production image (CUDA 12.8 optimized)
+docker build -t mlops-cuda-app:cuda128-v1.0 -f docker/Dockerfile.cuda128-share .
 
-# Deploy with docker-compose
-docker-compose -f docker/docker-compose.prod.yml up -d
+# Deploy with docker-compose (production-ready)
+docker-compose -f docker/docker-compose.cuda128-share.yml up -d
 ```
 
-### Kubernetes Deployment
+### Alternative Deployment Options
 
 ```bash
-# Apply Kubernetes manifests
-kubectl apply -f k8s/
+# Standard deployment
+docker-compose -f docker/docker-compose.yml up -d
 
-# Check deployment status
-kubectl get pods -l app=housing-predictor
+# For Kubernetes deployment, use our Docker images:
+# kubectl create deployment mlops-app --image=mlops-cuda-app:cuda128-v1.0
+# kubectl expose deployment mlops-app --port=8000 --type=LoadBalancer
 ```
 
 ## 🤝 Contributing
@@ -612,16 +627,16 @@ python tests/test_docker_image.py
 - **CUDA**: 12.8 ✅
 - **Status**: All services healthy and tests passing ✅
 
-#### **Legacy Setup** (Still Available)
+#### **Standard Setup** (Single Service)
 
 ```bash
-# Build the original Docker image
-docker build -f docker/Dockerfile -t mlops-gpu .
+# Build the standard Docker image
+docker build -f docker/Dockerfile -t mlops-cuda-app:latest .
 
 # Run with GPU support
-docker run --gpus all -p 8000:8000 -v $(pwd)/models:/app/models -v $(pwd)/data:/app/data mlops-gpu
+docker run --gpus all -p 8000:8000 -p 5000:5000 mlops-cuda-app:latest
 
-# Or use original compose
+# Or use standard compose (includes both FastAPI and MLflow)
 docker compose -f docker/docker-compose.yml up --build
 ```
 
